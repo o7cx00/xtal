@@ -19,26 +19,43 @@ CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 REDIRECT_URI = os.getenv("REDIRECT_URI")
 SCOPE = "user-library-read"
 
-# Connexion à la base de données PostgreSQL
 def get_db_connection():
     db_url = os.getenv("DATABASE_URL")  # Récupérer l'URL de la base de données depuis les variables d'environnement
-    conn = psycopg2.connect(db_url, sslmode="require")
+    
+    # Parser l'URL
+    parsed_url = urlparse(db_url)
+    
+    # Extraire les informations de connexion
+    db_config = {
+        'dbname': parsed_url.path[1:],  # Supprimer le premier "/"
+        'user': parsed_url.username,
+        'password': parsed_url.password,
+        'host': parsed_url.hostname,
+        'port': parsed_url.port,
+    }
+    
+    # Se connecter à la base de données
+    conn = psycopg2.connect(**db_config, sslmode="require")
     return conn
 
 # Créer la table si elle n'existe pas
 def create_db():
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS tokens (
-            user_id TEXT PRIMARY KEY,
-            access_token TEXT NOT NULL,
-            refresh_token TEXT NOT NULL,
-            token_expiry INTEGER NOT NULL
-        )
-    ''')
-    conn.commit()
-    conn.close()
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS tokens (
+                user_id TEXT PRIMARY KEY,
+                access_token TEXT NOT NULL,
+                refresh_token TEXT NOT NULL,
+                token_expiry INTEGER NOT NULL
+            )
+        ''')
+        conn.commit()
+        conn.close()
+        print("Base de données initialisée avec succès.")
+    except Exception as e:
+        print(f"Erreur lors de l'initialisation de la base de données : {e}")
 
 # Insérer ou mettre à jour le token dans la base de données
 def insert_or_update_token(user_id, access_token, refresh_token, token_expiry):
