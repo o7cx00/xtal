@@ -1,11 +1,12 @@
 import discord
 from discord.ext import commands
 from spotipy.oauth2 import SpotifyOAuth
-import sqlite3
+import psycopg2  # Bibliothèque pour PostgreSQL
 import threading
 from flask import Flask, request, redirect
 import time
 import os
+from urllib.parse import urlparse  # Pour parser l'URL de la base de données
 
 # Configuration du bot Discord
 intents = discord.Intents.default()
@@ -13,14 +14,20 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Configuration de Spotify
-CLIENT_ID = os.getenv("CLIENT_ID")  # Récupéré depuis les variables d'environnement
-CLIENT_SECRET = os.getenv("CLIENT_SECRET")  # Récupéré depuis les variables d'environnement
-REDIRECT_URI = os.getenv("REDIRECT_URI")  # Récupéré depuis les variables d'environnement
+CLIENT_ID = os.getenv("CLIENT_ID")
+CLIENT_SECRET = os.getenv("CLIENT_SECRET")
+REDIRECT_URI = os.getenv("REDIRECT_URI")
 SCOPE = "user-library-read"
 
-# Créer ou se connecter à la base de données SQLite
+# Connexion à la base de données PostgreSQL
+def get_db_connection():
+    db_url = os.getenv("DATABASE_URL")  # Récupérer l'URL de la base de données depuis les variables d'environnement
+    conn = psycopg2.connect(db_url, sslmode="require")
+    return conn
+
+# Créer la table si elle n'existe pas
 def create_db():
-    conn = sqlite3.connect('spotify_tokens.db')
+    conn = get_db_connection()
     c = conn.cursor()
     c.execute('''
         CREATE TABLE IF NOT EXISTS tokens (
@@ -35,11 +42,15 @@ def create_db():
 
 # Insérer ou mettre à jour le token dans la base de données
 def insert_or_update_token(user_id, access_token, refresh_token, token_expiry):
-    conn = sqlite3.connect('spotify_tokens.db')
+    conn = get_db_connection()
     c = conn.cursor()
     c.execute('''
-        INSERT OR REPLACE INTO tokens (user_id, access_token, refresh_token, token_expiry)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO tokens (user_id, access_token, refresh_token, token_expiry)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (user_id) DO UPDATE
+        SET access_token = EXCLUDED.access_token,
+            refresh_token = EXCLUDED.refresh_token,
+            token_expiry = EXCLUDED.token_expiry
     ''', (user_id, access_token, refresh_token, token_expiry))
     conn.commit()
     conn.close()
@@ -100,4 +111,4 @@ async def connect(ctx):
 create_db()
 
 # Démarrer le bot Discord
-bot.run(os.getenv("DISCORD_BOT_TOKEN"))  # Récupéré depuis les variables d'environnement
+bot.run(os.getenv("DISCORD_BOT_TOKEN"))
